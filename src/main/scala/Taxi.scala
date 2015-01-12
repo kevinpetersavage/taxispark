@@ -3,17 +3,20 @@ import org.apache.spark.SparkContext
 import org.apache.spark.SparkContext._
 import org.apache.spark.SparkConf
 
+import scala.util.Random
+
 object Taxi {
   def main(args: Array[String]): Unit = {
-    val conf = new SparkConf().setAppName("taxi") 
+    val conf = new SparkConf().setAppName("taxi").setMaster("local[4]")
     val sc = new SparkContext(conf)
 
     val start = 1
     val end = args(0).toInt
     val lowerLimit = args(1).toInt
     val lowerBounds = BigInt(args(2))
-    val splits = args(3).toInt
-    val range = Range(start, end)
+    val upperBounds = BigInt(args(3))
+    val splits = args(4).toInt
+    val range = Random.shuffle[Int, IndexedSeq](Range(start, end))
 
     val cubes = sc
       .parallelize(range, splits)
@@ -24,6 +27,7 @@ object Taxi {
       .cartesian(cubes)
       .filter(pair => pair._1 <= pair._2)
       .map(pair => pair._1 + pair._2)
+      .filter(_ < upperBounds)
       .filter(_ > lowerBounds)
       .map(x => (x, 1L))
       .reduceByKey(_ + _)
