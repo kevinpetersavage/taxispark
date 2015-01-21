@@ -8,14 +8,16 @@ object Taxi2 {
     val lowestNumberToCheck = BigInt(args(0))
     val highestNumberToCheck = BigInt(args(1))
 
-    val start = cubeRt(lowestNumberToCheck/2).toInt
-    val end = cubeRt(highestNumberToCheck-1).toInt
+    val start = Cubes.cubeRt(lowestNumberToCheck/2).toInt
+    val end = Cubes.cubeRt(highestNumberToCheck-1).toInt
 
     val lowerLimitToTN = args(2).toInt
     val splits = args(3).toInt
     val range = Random.shuffle(Range(start, end).toList)
 
-    val conf = new SparkConf().setAppName("taxi").setMaster("local[2]")
+
+
+    val conf = new SparkConf().setAppName("taxi").setMaster("local[1]")
     val sc = new SparkContext(conf)
 
     val values = sc
@@ -38,17 +40,5 @@ object Taxi2 {
     results.foreach(println)
   }
 
-  def cubeRt(n: BigInt) : BigInt = {
-    var a : BigInt = 1
-    var b = n
-    while(b > a) {
-      val mid = (a + b)/2
-      if(mid*mid*mid > n) {
-        b = mid - 1
-      } else {
-        a = mid+1
-      }
-    }
-    a-1
-  }
+
 }
