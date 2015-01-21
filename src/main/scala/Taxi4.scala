@@ -18,7 +18,7 @@ object Taxi4 {
     val values = sc
       .parallelize(range, splits)
 
-    val precision = pow(10, 5)
+    val precision = pow(10, 7)
 
     val result = values.cartesian(values)
       .filter(pair => pair._1 <= pair._2)
