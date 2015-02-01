@@ -6,7 +6,9 @@ import scala.util.Random
 
 object Taxi6 {
   def main(args: Array[String]): Unit = {
-    val conf = new SparkConf().setAppName("taxi").setMaster("local[2]")
+    val conf = new SparkConf()
+      .setAppName("taxi")
+      .set("spark.serializer", "org.apache.spark.serializer.KryoSerializer")
     val sc = new SparkContext(conf)
 
     val start = 1
