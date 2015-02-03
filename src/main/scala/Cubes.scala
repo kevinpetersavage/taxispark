@@ -3,7 +3,7 @@ object Cubes {
     var a : BigInt = 1
     var b = n
     while(b > a) {
-      val mid = ((a + b)/2)
+      val mid = (a + b) / 2
       if(mid*mid*mid > n) {
         b = mid - 1
       } else {
