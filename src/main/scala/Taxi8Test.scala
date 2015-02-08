@@ -11,8 +11,7 @@ class Taxi8Test extends FunSuite with BeforeAndAfterEach with ShouldMatchers {
   test("content of sums"){
     val n = 9
     val kRange = Range(0, Taxi8.calculateMaxK(n, 1))
-    val nRange = kRange.map(9 + _)
-    val inputPairs = for (x <- nRange; y <- 1 until (x+1)) yield (x,y)
+    val inputPairs = (for (k <- kRange) yield Taxi8.producePairsFor(9, k)).flatten
 
     val values = inputPairs.map(Taxi8.performSumOfCubes)
     assert(values.contains(BigInt(9*9*9*2)))
