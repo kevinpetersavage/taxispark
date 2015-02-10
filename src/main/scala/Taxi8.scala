@@ -1,5 +1,6 @@
 import com.google.common.base.Stopwatch
 import org.apache.spark.{SparkConf, SparkContext}
+import scala.math.sqrt
 
 object Taxi8 {
 
@@ -11,17 +12,20 @@ object Taxi8 {
 
     val lowerLimitToTN = args(1).toInt
     val splits = args(2).toInt
-    val interval = 1
-    val range = start until (end+1) by interval
+    val m = ((1.0/2.0)*(sqrt(8 * end + 1) +1)).toInt
+    val nValues = (start until m+1).reverse.scanLeft(1){_+_}
+    val nValuesWithIntervals = nValues.zip(nValues.drop(1)).map(withNext => (withNext._1, withNext._2-withNext._1))
 
     val conf = new SparkConf().setAppName("taxi").setMaster("local[2]")
     val sc = new SparkContext(conf)
 
-    val results = range.flatMap{ n =>
+    val results = nValuesWithIntervals.flatMap{ nWithInterval =>
+      val n = nWithInterval._1
+      val interval = nWithInterval._2
       val maxK = calculateMaxK(n, interval)
       val kRange = sc.parallelize(0 until maxK, splits)
 
-      kRange.flatMap(producePairsFor(n, _))
+      kRange.flatMap(producePairsFor(n, _, interval))
         .map(pair => if (pair._1 > pair._2) pair.swap else pair) // don't understand why we need this
         .distinct()
         .map(performSumOfCubes)
@@ -36,9 +40,9 @@ object Taxi8 {
     println("time: " + stopwatch)
   }
 
-  def producePairsFor(n: Int, k: Int): TraversableOnce[(Int,Int)] = {
-    val start = calculateJBound(BigInt(n), BigInt(k)).getOrElse(0)
-    val end = calculateJBound(BigInt(n+1), BigInt(k-1)).getOrElse(n)
+  def producePairsFor(n: Int, k: Int, interval: Int): TraversableOnce[(Int,Int)] = {
+    val start = calculateJLowerBound(BigInt(n), BigInt(k)).getOrElse(0)
+    val end = calculateJUpperBound(BigInt(n), BigInt(k), BigInt(interval))
     for (y <- start until end+1) yield (n+k, y)
   }
 
@@ -50,15 +54,28 @@ object Taxi8 {
   }
 
   def calculateMaxK(n: Int, interval: Int): Int = {
-    Math.floor((n + interval).toDouble * (Math.pow(2.0, 1.0 / 3.0) - 1.0)).toInt + 2
+    Math.floor((n + interval).toDouble * (Math.pow(2.0, 1.0 / 3.0) - 1.0)).toInt + 1 + interval
   }
 
-  def calculateJBound(n: BigInt, k: BigInt): Option[Int] = {
-    val value = (n * n * n) - (k * k * k) - (k * k * n * 3) - (k * n * n * 3)
-    if (value < 0){
+  def calculateJLowerBound(n: BigInt, k: BigInt): Option[Int] = {
+    val s = calculateS(n, k)
+    if (s < 0){
       None
     } else {
-      Some(Cubes.cubeRt(value).toInt)
+      Some(Cubes.cubeRt(s).toInt)
+    }
+  }
+
+  def calculateS(n: BigInt, k: BigInt): BigInt = {
+    (n * n * n) - (k * k * k) - (k * k * n * 3) - (k * n * n * 3)
+  }
+
+  def calculateJUpperBound(n: BigInt, k: BigInt, interval: BigInt): Int = {
+    val s = calculateS(n, k) + (n*n*interval*6) + (n*interval*interval*6) + (interval*interval*interval*2)
+    if (s < 0){
+      throw new UnsupportedOperationException("implies k limit is wrong")
+    } else {
+      Cubes.cubeRt(s).toInt
     }
   }
 }
