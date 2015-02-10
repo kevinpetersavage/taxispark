@@ -16,7 +16,7 @@ object Taxi8 {
     val nValues = (start until m+1).reverse.scanLeft(1){_+_}
     val nValuesWithIntervals = nValues.zip(nValues.drop(1)).map(withNext => (withNext._1, withNext._2-withNext._1))
 
-    val conf = new SparkConf().setAppName("taxi").setMaster("local[2]")
+    val conf = new SparkConf().setAppName("taxi").setMaster("local[4]")
     val sc = new SparkContext(conf)
 
     val results = nValuesWithIntervals.flatMap{ nWithInterval =>
@@ -26,8 +26,6 @@ object Taxi8 {
       val kRange = sc.parallelize(0 until maxK, splits)
 
       kRange.flatMap(producePairsFor(n, _, interval))
-        .map(pair => if (pair._1 > pair._2) pair.swap else pair) // don't understand why we need this
-        .distinct()
         .map(performSumOfCubes)
         .groupBy(identity)
         .map(group => (group._2.size, group._1))
@@ -75,7 +73,7 @@ object Taxi8 {
     if (s < 0){
       throw new UnsupportedOperationException("implies k limit is wrong")
     } else {
-      Cubes.cubeRt(s).toInt
+      Math.min(Cubes.cubeRt(s).toInt, (n+k).toInt)
     }
   }
 }

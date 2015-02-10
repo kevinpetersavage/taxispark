@@ -18,7 +18,9 @@ class Taxi8Test extends FunSuite with BeforeAndAfterEach with ShouldMatchers {
     val expected = (for (x <- 1 until 15; y <- 1 until 15) yield (x * x * x) + (y * y * y))
       .filter(_ < 10 * 10 * 10 * 2)
       .filter(_ > 9 * 9 * 9 * 2)
-    val diff = values.diff(expected)
+      .map(BigInt(_))
+      .toSet
+    val diff = values.toSet.diff(expected)
     assert(diff.size==6) // 3 overrun and 3 underrun
   }
 
