@@ -1,41 +1,62 @@
-import com.google.common.base.Stopwatch
+import com.amazonaws.auth.BasicAWSCredentials
+import com.amazonaws.services.simpledb.AmazonSimpleDBClient
+import com.amazonaws.services.simpledb.model.{SelectRequest, PutAttributesRequest, ReplaceableAttribute}
 import org.apache.spark.{SparkConf, SparkContext}
-import scala.math.sqrt
+
+import scala.collection.JavaConversions._
 
 object Taxi8 {
 
   def main(args: Array[String]): Unit = {
-    val stopwatch = new Stopwatch().start()
+    val processedTableName = "processed"
 
-    val start = 1
-    val end = args(0).toInt
+    val interval = args(0).toInt
 
     val lowerLimitToTN = args(1).toInt
     val splits = args(2).toInt
-    val m = ((1.0/2.0)*(sqrt(8 * end + 1) +1)).toInt
-    val nValues = (start until m+1).reverse.scanLeft(1){_+_}
-    val nValuesWithIntervals = nValues.zip(nValues.drop(1)).map(withNext => (withNext._1, withNext._2-withNext._1))
+    val key = args(3)
+    val secret = args(4)
+
+    val db = new AmazonSimpleDBClient(new BasicAWSCredentials(key, secret))
+
+    val coveredValues = findCoveredValues(processedTableName, db)
 
     val conf = new SparkConf().setAppName("taxi").setMaster("local[4]")
     val sc = new SparkContext(conf)
 
-    val results = nValuesWithIntervals.flatMap{ nWithInterval =>
-      val n = nWithInterval._1
-      val interval = nWithInterval._2
-      val maxK = calculateMaxK(n, interval)
-      val kRange = sc.parallelize(0 until maxK, splits)
+    Stream.from(1).map(_*interval)
+      .filter(n => (n until n+interval).forall(coveredValues.contains))
+      .foreach{ n =>
+        val maxK = calculateMaxK(n, interval)
+        val kRange = sc.parallelize(0 until maxK, splits)
 
-      kRange.flatMap(producePairsFor(n, _, interval))
-        .map(performSumOfCubes)
-        .groupBy(identity)
-        .map(group => (group._2.size, group._1))
-        .filter(pair => pair._1 >= lowerLimitToTN)
-        .collect()
-    }.groupBy(_._1).map(pair => (pair._1, pair._2.map(_._2).min))
+        kRange.flatMap(producePairsFor(n, _, interval))
+          .map(performSumOfCubes)
+          .groupBy(identity)
+          .map(group => (group._2.size, group._1))
+          .filter(pair => pair._1 >= lowerLimitToTN)
+          .groupBy(_._1)
+          .map(pair => (pair._1, pair._2.map(_._2).min))
+          .collect()
+          .foreach(putToDb(db, "results", "count"))
 
-    results.foreach(println(_))
+        putToDb(db, processedTableName, "end")(n, n+interval)
+      }
+  }
 
-    println("time: " + stopwatch)
+  def findCoveredValues(processedTableName: String, db: AmazonSimpleDBClient) = {
+    db.select(new SelectRequest(s"select * from $processedTableName"))
+      .getItems
+      .flatMap(item => item.getAttributes.map(attribute => (attribute.getValue, item.getName)))
+      .map(item => Range(item._1.toInt, item._2.toInt))
+      .reduce(_.union(_))
+      .toSet
+  }
+
+  def putToDb[T,U](db: AmazonSimpleDBClient, table: String, attributeName: String)(keyValue: (T, U)): Unit = {
+    val attributes = List(new ReplaceableAttribute(attributeName, keyValue._1.toString, true))
+    val putRequest = new PutAttributesRequest(table, keyValue._2.toString, attributes)
+    db.putAttributes(putRequest)
   }
 
   def producePairsFor(n: Int, k: Int, interval: Int): TraversableOnce[(Int,Int)] = {
