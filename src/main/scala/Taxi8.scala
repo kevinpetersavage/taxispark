@@ -1,6 +1,6 @@
 import com.amazonaws.auth.BasicAWSCredentials
 import com.amazonaws.services.simpledb.AmazonSimpleDBClient
-import com.amazonaws.services.simpledb.model.{SelectRequest, PutAttributesRequest, ReplaceableAttribute}
+import com.amazonaws.services.simpledb.model.{PutAttributesRequest, ReplaceableAttribute, SelectRequest}
 import org.apache.spark.{SparkConf, SparkContext}
 
 import scala.collection.JavaConversions._
