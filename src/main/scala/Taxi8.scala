@@ -1,14 +1,16 @@
 import com.amazonaws.auth.BasicAWSCredentials
 import com.amazonaws.services.simpledb.AmazonSimpleDBClient
-import com.amazonaws.services.simpledb.model.{PutAttributesRequest, ReplaceableAttribute, SelectRequest}
+import com.amazonaws.services.simpledb.model._
 import org.apache.spark.{SparkConf, SparkContext}
 
 import scala.collection.JavaConversions._
+import scala.collection.mutable
 
 object Taxi8 {
+  val processedTableName = "processed"
+  val resultsTableName = "results"
 
   def main(args: Array[String]): Unit = {
-    val processedTableName = "processed"
 
     val interval = args(0).toInt
 
@@ -18,17 +20,19 @@ object Taxi8 {
     val secret = args(4)
 
     val db = new AmazonSimpleDBClient(new BasicAWSCredentials(key, secret))
+    createDomainsIfNeeded(db)
 
-    val coveredValues = findCoveredValues(processedTableName, db)
+    val maxCovered = maxCoveredValue(processedTableName, db)
 
-    val conf = new SparkConf().setAppName("taxi").setMaster("local[4]")
+    val conf = new SparkConf().setAppName("taxi")
     val sc = new SparkContext(conf)
 
-    Stream.from(1).map(_*interval)
-      .filter(n => (n until n+interval).forall(coveredValues.contains))
+    Stream.from(0).map(_*interval).map(_+1)
+      .filter { n => (n + interval - 1) > maxCovered}
       .foreach{ n =>
+        println("about to do " + n)
         val maxK = calculateMaxK(n, interval)
-        val kRange = sc.parallelize(0 until maxK, splits)
+        val kRange = sc.parallelize((0 until maxK).reverse, splits)
 
         kRange.flatMap(producePairsFor(n, _, interval))
           .map(performSumOfCubes)
@@ -36,26 +40,41 @@ object Taxi8 {
           .map(group => (group._2.size, group._1))
           .filter(pair => pair._1 >= lowerLimitToTN)
           .groupBy(_._1)
-          .map(pair => (pair._1, pair._2.map(_._2).min))
+          .map(pair => (pair._2.map(_._2).min, pair._1))
           .collect()
-          .foreach(putToDb(db, "results", "count"))
+          .foreach(putToDb(db, resultsTableName, "count"))
 
         putToDb(db, processedTableName, "end")(n, n+interval)
       }
   }
 
-  def findCoveredValues(processedTableName: String, db: AmazonSimpleDBClient) = {
-    db.select(new SelectRequest(s"select * from $processedTableName"))
+  def createDomainsIfNeeded(db: AmazonSimpleDBClient): Unit = {
+    val domains: ListDomainsResult = db.listDomains()
+    createDomainIfNeeded(db, domains, resultsTableName)
+    createDomainIfNeeded(db, domains, processedTableName)
+  }
+
+  def createDomainIfNeeded(db: AmazonSimpleDBClient, domains: ListDomainsResult, name: String): Unit = {
+    if (!domains.getDomainNames.contains(name)) {
+      db.createDomain(new CreateDomainRequest(name))
+    }
+  }
+
+  def maxCoveredValue(processedTableName: String, db: AmazonSimpleDBClient) = {
+    val ranges: mutable.Buffer[Range] = db.select(new SelectRequest(s"select * from $processedTableName"))
       .getItems
-      .flatMap(item => item.getAttributes.map(attribute => (attribute.getValue, item.getName)))
+      .flatMap(item => item.getAttributes.map(attribute => (item.getName,attribute.getValue)))
       .map(item => Range(item._1.toInt, item._2.toInt))
-      .reduce(_.union(_))
-      .toSet
+    if (ranges.isEmpty){
+      0
+    } else {
+      ranges.map(_.max).max
+    }
   }
 
   def putToDb[T,U](db: AmazonSimpleDBClient, table: String, attributeName: String)(keyValue: (T, U)): Unit = {
-    val attributes = List(new ReplaceableAttribute(attributeName, keyValue._1.toString, true))
-    val putRequest = new PutAttributesRequest(table, keyValue._2.toString, attributes)
+    val attributes = List(new ReplaceableAttribute(attributeName, keyValue._2.toString, true))
+    val putRequest = new PutAttributesRequest(table, keyValue._1.toString, attributes)
     db.putAttributes(putRequest)
   }
 
