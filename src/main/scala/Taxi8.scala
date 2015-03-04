@@ -61,15 +61,26 @@ object Taxi8 {
   }
 
   def maxCoveredValue(processedTableName: String, db: AmazonSimpleDBClient) = {
-    val ranges: mutable.Buffer[Range] = db.select(new SelectRequest(s"select * from $processedTableName"))
+    var selectResult = db.select(new SelectRequest(s"select * from $processedTableName"))
+    val ranges: mutable.Buffer[Range] = selectResult
       .getItems
       .flatMap(item => item.getAttributes.map(attribute => (item.getName,attribute.getValue)))
       .map(item => Range(item._1.toInt, item._2.toInt))
-    if (ranges.isEmpty){
-      0
-    } else {
-      ranges.map(_.max).max
+    var maxSoFar = ranges.map(_.max).max
+
+    while (selectResult.getNextToken != null){
+      val request = new SelectRequest(s"select * from $processedTableName")
+      request.setNextToken(selectResult.getNextToken)
+      selectResult = db.select(request)
+      val ranges: mutable.Buffer[Range] = selectResult
+        .getItems
+        .flatMap(item => item.getAttributes.map(attribute => (item.getName,attribute.getValue)))
+        .map(item => Range(item._1.toInt, item._2.toInt))
+
+      maxSoFar = List(maxSoFar,ranges.map(_.max).max).max
     }
+
+    maxSoFar
   }
 
   def putToDb[T,U](db: AmazonSimpleDBClient, table: String, attributeName: String)(keyValue: (T, U)): Unit = {
